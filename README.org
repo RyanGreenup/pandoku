@@ -1,4 +1,7 @@
 #+TITLE: Pandoku
+#+OPTIONS: H:5
+#+OPTIONS: broken-links:auto
+#+OPTIONS: tex:t
 
  This is a shell script to help using pandoc to go into and out of Dokuwiki
  Files in a way that doesn't alter LaTeX when using the [[https://www.dokuwiki.org/plugin:mathjax][MathJax Plugin]], this
@@ -47,6 +50,41 @@ cat file.md | pandoc -f markdown+raw_tex+tex_math_dollars+tex_math_single_backsl
 #+end_src
 
 * Notes on Issues
+** Summary
+Assuming that the
+[[https://www.dokuwiki.org/plugin:mathjax][Mathjax Plugin]] is installed, to convert to/from dokuwiki and preserve math, as of pandoc v 2.11.2
+
+*** Summary
+- /*Import*/
+
+  - Go into HTML+Mathjax first, when that works turn that into Dokuwiki
+    and it should just work.
+
+    - From org-mode =C-c C-c e h H V G y= then
+      =xclip -sel clip -o | pandoc -f html -t dokuwiki | xclip -sel clip=
+
+  - If not use the filters described above
+
+- /*Export*/
+
+  - Going straight to =org-mode= seems to work, then export that
+
+    - =xclip -sel clip -o | pandoc -f dokuwiki -t org | cat - <(echo "#+OPTIONS: H:6") | pandoc -f org -t markdown | xclip -sel clip=
+
+  - If not just use =render.php= to get a html, as above
+
+    + Ensure that the [[https://www.dokuwiki.org/plugin:mathjax][Mathjax Plugin]] is installed
+
+        #+begin_src bash
+        # HTML
+        x -o | sudo php /srv/http/dokuwiki/bin/render.php |\
+        pandoc -f html+raw_tex+tex_math_single_backslash+tex_math_dollars -t html -s --mathjax -o /tmp/file.html
+        # LaTeX
+        x -o | sudo php /srv/http/dokuwiki/bin/render.php |\
+        pandoc -f html+raw_tex+tex_math_single_backslash+tex_math_dollars -t latex
+        </code>
+        #+end_src
+
 ** Out of Dokuwiki
 Getting out of Dokuwiki is hard, the following is the way to export dokuwiki in
 a way that also preserves mathematics.
@@ -236,6 +274,7 @@ sd ' \*\*([a-zA-Z0-9]+)\*\* ' ' *$1* '
 # sd ' __(\w)__ ' ' _$1_ '
 
 #+end_src
+
 
 * Footnotes
 
