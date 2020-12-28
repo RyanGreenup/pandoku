@@ -9,6 +9,16 @@
 * Usage
 The commands are fairly straight forward and the format names match =pandoc --list-output-formats=.
 ** Script
+First clone this repository:
+
+#+begin_src bash
+git clone --depth 1 https://github.com/RyanGreenup/pandoku
+cd pandoku
+#+end_src
+
+Then use the shell script =pandoku.sh= as described below.
+
+
 *** Out of Dokuwiki
 #+begin_src bash
 bash pandoku.sh < file.dw to org  # Turn dokuwiki into org-mode
