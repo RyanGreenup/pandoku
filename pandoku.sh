@@ -23,7 +23,8 @@ main() {
 
 setVars () {
     readonly script_name=$(basename "${0}")
-    readonly script_dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+             script_dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+    readonly script_dir=$(realpath "${script_dir}""/""${script_name}" | xargs dirname)
     IFS=$'\t\n'   # Split on newlines and tabs (but not on spaces)
     cd "${script_dir}"
 }
