@@ -1,0 +1,232 @@
+#+TITLE: Pandoku
+
+ This is a shell script to help using pandoc to go into and out of Dokuwiki
+ Files in a way that doesn't alter LaTeX when using the [[https://www.dokuwiki.org/plugin:mathjax][MathJax Plugin]], this
+ won't be necessary when the
+ =+raw_tex==+tex_math_dollars==+tex_math_single_backslash= extensions are made
+ to work with the dokuwiki format (see issue [[https://github.com/jgm/pandoc/issues/5319][#5319]]).
+
+* Usage
+The commands are fairly straight forward and the format names match =pandoc --list-output-formats=.
+** Script
+*** Out of Dokuwiki
+#+begin_src bash
+bash pandoku.sh < file.dw to org  # Turn dokuwiki into org-mode
+bash pandoku.sh < file.dw to org  # Turn dokuwiki into Markdown
+bash pandoku.sh < file.dw to org  # Turn Dokuwiki into LaTeX
+#+end_src
+*** Into Dokuwiki
+#+begin_src bash
+bash pandoku.sh < file.org from org       # Turn dokuwiki into org-mode
+bash pandoku.sh < file.md  from markdown  # Turn dokuwiki into Markdown
+bash pandoku.sh < file.tex from latex     # Turn Dokuwiki into LaTeX
+#+end_src
+
+** Filters
+If you don't want to use the shell script, clone the repository and then use the filters like so:
+
+*** Org Mode to Dokuwiki
+#+begin_src bash
+cat file.org | pandoc -f org -t dokuwiki --filter dokuwiki_math_raw_filter.py
+#+end_src
+
+*** Markdown to Dokuwiki
+
+#+begin_src python
+cat file.md | pandoc -f markdown+raw_tex+tex_math_dollars+tex_math_single_backslash -t json | python json_fix_stdin.py | pandoc -f json -t latex
+#+end_src
+
+* Notes on Issues
+** Out of Dokuwiki
+Getting out of Dokuwiki is hard, the following is the way to export dokuwiki in
+a way that also preserves mathematics.
+
+#+begin_src bash
+CLIP_IN () { xclip -selection clipboard ; }
+CLIP_OUT () {  xclip -selection clipboard -o ; }
+
+CLIP_OUT | \
+    pandoc -f dokuwiki -t org |\
+    python -f org -t latex
+#+end_src
+
+This may be subject to change, an alternative way is to make sure to install the
+[[https://www.dokuwiki.org/plugin:mathjax][MathJax Plugin]] and then use the =render.php= script from [[https://github.com/splitbrain/dokuwiki][Dokuwiki Source]], this
+is included in this repository and an be used like so: [fn:1]
+
+#+begin_src bash
+OUTPUT="latex"
+
+php ./dokuwiki/bin/render.php |\
+pandoc -f html+raw_tex+tex_math_single_backslash+tex_math_dollars -t "${OUTPUT}"
+#+end_src
+
+** Into Dokuwiki
+*** Math
+Dokuwiki is usually configured to use mathjax to render LaTeX, so all that is
+needed is for pandoc to ignore all math when converting from other markup
+languages into dokuwiki, for the most part this occurs.
+
+The latex =align= environment however is not recognised because pandoc doesn't
+implement the =raw_tex= environment for dokuwiki yet.
+
+If the input file contains an =align= environment when converting to dokuwiki it
+will simply be ommitted by dokuwiki.
+
+One option would be to wrap all align environments in math environments =\[\]= /
+=$$= / =$= / =\(\)=, but this is confusing because even though mathjax will
+recognise the =align= environment wrapped in math delimiters, LaTeX will throw
+an error.
+
+**** Modifying the JSON
+So instead we can force the issue by telling =pandoc= to treat the raw latex
+environments simply as text so they end up just being dumped into the output.
+
+This could be done by first using pandoc to create a json file like so:
+
+#+begin_src bash
+CLIP_IN () { xclip -selection clipboard ; }
+CLIP_OUT () {  xclip -selection clipboard -o ; }
+
+CLIP_OUT | \
+    pandoc -f org -t json    |\
+    python json_fix_stdin.py |\
+    pandoc -f json -t dokuwiki
+#+end_src
+
+Where the python necessary to change the =raw= blocks to =Para= blocks is given by:
+
+#+begin_src python
+#!/usr/bin/env python
+import sys
+import json
+
+# Read Json from STDIN
+data = json.load(sys.stdin)
+
+# Fix the JSON
+for i in range(len(data['blocks'])):                       # Go through each block, which is like a chunk of syntax
+    block = data['blocks'][i]                              # the current block
+    block_type = block['t']                                # what is the block i.e. math/raw/para
+    if block_type=='RawBlock' and block['c'][0]=='latex':    # If it's raw and latex
+        block['t'] = 'Para'                                # Make the type just a paragraph of text
+        math_content=block['c'][1]
+        block['c']=[{
+                    "t": "Str",
+                    "c": math_content
+                    }]
+
+# Print the STDOUT
+json.dump(data, sys.stdout)
+sys.exit(0)
+#+end_src
+
+**** Writing a filter
+Another option would be to use python to write a pandoc filter like so:
+
+#+begin_src python
+#!/usr/bin/env python
+"""
+Pandoc filter to convert raw latex environments to paragraphs of text
+"""
+from pandocfilters import toJSONFilter, Emph, Para
+
+def raw_to_para(key, value, format, meta):
+  if key == 'RawBlock' and value[0] == 'latex':
+    math_content = value[1]
+    math_value=[{
+            "t": "Str",
+            "c": math_content
+                }]
+
+    return Para(math_value)
+
+if __name__ == "__main__":
+  toJSONFilter(raw_to_para)
+#+end_src
+
+Then this could be used like so:
+
+#+begin_src bash
+CLIP_IN () { xclip -selection clipboard ; }
+CLIP_OUT () {  xclip -selection clipboard -o ; }
+
+CLIP_OUT | \
+    pandoc -f org -t dokuwiki --filter ./dokuwiki_math_raw_filter.py
+#+end_src
+*** From Org-Mode
+By default org-mode will only have three headings, anything else becomes list items.
+
+This can be adjusted by putting the following line anywere in the document:
+
+#+begin_example
+,#+OPTIONS: H:9
+#+end_example
+
+To wrap this into a call to pandoc use the following:
+
+#+begin_src bash
+CLIP_IN () { xclip -selection clipboard ; }
+CLIP_OUT () {  xclip -selection clipboard -o ; }
+
+CLIP_OUT | \
+    cat - <(echo "#+OPTIONS: H:6") | \
+    pandoc -f "${@:-}"   \
+    -t dokuwiki --filter ./dokuwiki_math_raw_filter.py
+#+end_src
+
+
+** Alternative Approaches
+*** Export
+**** Using the Built in export
+By appending =?do=export_xhtml= it is possible to export a page to HTML, but
+automating it is a little tricky, this isn't any different to using =render.php=
+though. See [[https://www.dokuwiki.org/export][Dokuwiki Export]] and the [[https://www.dokuwiki.org/export?do=export_xhtml][exported version here]].
+
+**** Alternative Script
+
+This is an alternative option that works reasonaby well:
+
+[[https://github.com/titledk/dokuwiki-to-markdown-converter]]
+
+**** LaTeX Export Plugin
+The [[https://www.dokuwiki.org/plugin:latexport][Latexport Plugin]] will export a page as latex and works with the Mathjax
+extension which is quite convenient.
+
+**** Markdown Export Plugin
+The [[READ][Markdown Export Plugin]] will exporrt a page as markdown, this can then be converted to something else, like latex, with pandoc:
+
+#+begin_src bash
+CLIP_IN () { xclip -selection clipboard ; }
+CLIP_OUT () {  xclip -selection clipboard -o ; }
+
+CLIP_OUT | \
+pandoc -f markdown+raw_tex+tex_math_dollars+tex_math_single_backslash -t latex
+#+end_src
+**** Sed or Perl
+
+Something like this could probably get dokuwiki fairly close to org-mode, then it would be possible to use the =org-export= to go to anything. Although code blocks and math environments will be a bit tricky:
+
+#+begin_src
+#!/bin/bash
+
+# * Headings
+
+sd '^====== (.*) ======\n' '* $1\n'      |\
+sd  '^===== (.*) =====\n'  '** $1\n'     |\
+sd   '^==== (.*) ====\n'   '*** $1\n'    |\
+sd    '^=== (.*) ===\n'   '**** $1\n'    |\
+sd     '^== (.*) ==\n'    '***** $1\n'   |\
+sd      '^= (.*) =\n'      '****** $1\n' |\
+
+# * Font
+sd ' \*\*([a-zA-Z0-9]+)\*\* ' ' *$1* '
+# sd -s ' **(\w)** ' ' *$1* '
+# sd ' //(\w)// ' ' /$1/ ' |\
+# sd ' __(\w)__ ' ' _$1_ '
+
+#+end_src
+
+* Footnotes
+
+[fn:1]: It is required to have the MathJax Plugin installed, otherwise this will not work. It's worth mentioning that the =render.php= script was [[https://github.com/splitbrain/dokuwiki/commits/master/bin/render.php][first added in 2010]], yet in 2011 a [[https://www.dokuwiki.org/tips:dokuwiki_parser_cli][dokucli.php]] script was added to the dokuwiki Tips, it seems to do the same thing though so I don't know why one would be used over the other.
